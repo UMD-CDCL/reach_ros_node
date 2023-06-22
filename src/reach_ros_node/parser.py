@@ -184,6 +184,8 @@ parse_maps = {
         ("vdop", safe_float, 6)
         ],
     "ZDA": [  # not used
+        ],
+    "EBP": [  # not used
         ]
     }
 
