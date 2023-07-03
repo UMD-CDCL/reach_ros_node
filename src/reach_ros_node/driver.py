@@ -94,7 +94,12 @@ class RosNMEADriver(object):
         # Now that we are done with processing messages
         # Lets publish what we have!
         if self.has_fix and self.has_std:
-            self.fix_pub.publish(self.msg_fix)
+            if not (isnan(self.msg_fix.position_covariance[0]) or 
+                    isnan(self.msg_fix.position_covariance[4]) or
+                    isnan(self.msg_fix.position_covariance[8])):
+
+                self.fix_pub.publish(self.msg_fix)
+                
             self.msg_fix = NavSatFix()
             self.has_fix = False
             self.has_std = False
