@@ -22,14 +22,14 @@ Alternatively, if you connect the Reach M+ module via a USB cable:
    * Baud rate: 38400
    * Format: NMEA
 5. The node automatically finds the device serial port using pyudev (install v0.21.0 `pip3 install -Iv pyudev==0.21.0` if not installed), and starts it. 
-6. Run using `rosrun reach_ros_node nmea_serial_driver`
+6. Run using `ros2 run reach_ros_node nmea_serial_driver`
 
 ## Driver Details
 
 * Publishes GPS fix, velocity, and time reference
-  * `/tcpfix` - NavSatFixed
-  * `/tcpvel` - TwistedStamped
-  * `/tcptime` - TimeReference
+  * `/fix` - NavSatFixed
+  * `/vel` - TwistedStamped
+  * `/time` - TimeReference
 * Can specify the following launch parameters 
   * `~host` - IP adress of the Reach RTK GNSS (default: 'reach.local')
   * `~port` - The port number for the TCP connection (default: 123456)
