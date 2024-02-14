@@ -47,10 +47,6 @@ class ros2_ReachSerialHandler(Node):
                 data = self.emlid.readline()
                 rclpy.spin_once(self, timeout_sec=0.1) # allow functions such as ros2 node info, ros2 param list to work
                 try:
-                    # self.get_logger().info("{0}".format(data))
-                    # self.get_logger().info("{0}".format(data.decode('utf-8').rstrip()))
-                    # self.get_logger().info(repr(type(data)))
-                    # driver.process_line(data)
                     driver.process_line(data.decode('utf-8').rstrip().encode('utf-8'))
                 except ValueError as e:
                     self.get_logger().info("Value error, likely due to missing fields in the NMEA message. Error was: %s." % e)
@@ -76,30 +72,6 @@ class ros2_ReachSerialHandler(Node):
                 except Exception as e:
                     self.get_logger().error("Emlid serial connection attempt failed:")
                     self.get_logger().error(e)
-        # for device in iter(self.monitor_.poll, None):
-        #     self.get_logger().info("hello?")
-        #     device_details = dict(device)
-            # self.get_logger().info("hello?")
-
-        # test = self.context_.list_devices(subsystem='tty', ID_BUS='usb')
-
-        # self.get_logger().info(repr(list(test)))
-
-        # for device in self.context_.list_devices(subsystem='tty', ID_BUS='usb'):
-        #     device_details = dict(device)
-        #     if device_details['ID_VENDOR'] == 'Emlid':
-        #         port = str(device_details['DEVNAME'])
-
-        #         self.get_logger().info("Emlid device found at port = " + port)
-
-                # try:
-                #     self.emlid = serial.Serial(port=port, baudrate=38400)
-                #     self.device_connected = True
-                #     break
-
-                # except Exception as e:
-                #     self.get_logger().error("Emlid serial connection attempt failed:")
-                #     self.get_logger().error(e)
 
 
 def main(args=None):

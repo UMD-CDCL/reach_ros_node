@@ -45,9 +45,9 @@ class RosNMEADriver(object):
         self.parent = parent_node
 
         # Our publishers
-        self.parent.fix_pub = self.parent.create_publisher(NavSatFix,'tcpfix',10)
-        self.parent.vel_pub = self.parent.create_publisher(TwistStamped,'tcpvel',10)
-        self.parent.timeref_pub = self.parent.create_publisher(TimeReference,'tcptime',10)
+        self.parent.fix_pub = self.parent.create_publisher(NavSatFix,'emlid_fix',10)
+        self.parent.vel_pub = self.parent.create_publisher(TwistStamped,'emlid_vel',10)
+        self.parent.timeref_pub = self.parent.create_publisher(TimeReference,'emlid_time',10)
 
         # Frame of references we should publish in
         self.frame_timeref = self.parent.get_parameter('frame_timeref').value
