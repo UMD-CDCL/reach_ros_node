@@ -57,10 +57,11 @@ class ros2_ReachSerialHandler(Node):
     # Will loop till we get a connection, note we have a long timeout
     def connect_to_device(self):
         self.get_logger().info("starting to poll.")
-        device_list = self.context_.list_devices(subsystem='tty', ID_BUS='usb')
+        device_list = self.context_.list_devices(subsystem='tty')
         for device in device_list:
             device_details = dict(device)
-            if device_details['ID_VENDOR'] == 'Emlid':
+            # if device_details['ID_VENDOR'] == 'Emlid':
+            if device_details['DEVNAME'][-1] == '0':
                 port = str(device_details['DEVNAME'])
                 self.get_logger().info("Emlid device found at port = " + port)
 
