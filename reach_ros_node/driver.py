@@ -95,6 +95,7 @@ class RosNMEADriver(object):
         # Now that we are done with processing messages
         # Lets publish what we have!
         if self.has_fix and self.has_std:
+            #self.msg_fix.longitude = -self.msg_fix.longitude
             self.parent.fix_pub.publish(self.msg_fix)
             self.msg_fix = NavSatFix()
             self.has_fix = False
@@ -140,11 +141,11 @@ class RosNMEADriver(object):
         self.msg_fix.status.service = NavSatStatus.SERVICE_GPS
         # Set our lat lon position
         latitude = data['latitude']
-        if data['latitude_direction'] == 'S':
+        if data['latitude_direction'] == "b'S'":
             latitude = -latitude
         self.msg_fix.latitude = latitude
         longitude = data['longitude']
-        if data['longitude_direction'] == 'W':
+        if data['longitude_direction'] == "b'W'":
             longitude = -longitude
         self.msg_fix.longitude = longitude
         # Altitude is above ellipsoid, so adjust for mean-sea-level
@@ -224,11 +225,11 @@ class RosNMEADriver(object):
         self.msg_fix.status.service = NavSatStatus.SERVICE_GPS
         # Set our lat lon position
         latitude = data['latitude']
-        if data['latitude_direction'] == 'S':
+        if data['latitude_direction'] == "b'S'":
             latitude = -latitude
         self.msg_fix.latitude = latitude
         longitude = data['longitude']
-        if data['longitude_direction'] == 'W':
+        if data['longitude_direction'] == "b'W'":
             longitude = -longitude
         self.msg_fix.longitude = longitude
         # When using RMC we don't know the height and covariance

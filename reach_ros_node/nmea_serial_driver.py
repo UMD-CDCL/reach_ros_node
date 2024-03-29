@@ -47,7 +47,7 @@ class ros2_ReachSerialHandler(Node):
                 data = self.emlid.readline()
                 rclpy.spin_once(self, timeout_sec=0.1) # allow functions such as ros2 node info, ros2 param list to work
                 try:
-                    driver.process_line(data.decode('utf-8').rstrip().encode('utf-8'))
+                    driver.process_line(data.decode('utf-8').rstrip().encode('utf-8').strip(b'\x00'))
                 except ValueError as e:
                     self.get_logger().info("Value error, likely due to missing fields in the NMEA message. Error was: %s." % e)
         except Exception as e:
