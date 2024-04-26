@@ -32,6 +32,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 import math
+import numpy as np
 from builtin_interfaces.msg import Time
 from sensor_msgs.msg import NavSatFix, NavSatStatus, TimeReference
 from geometry_msgs.msg import TwistStamped
@@ -95,8 +96,8 @@ class RosNMEADriver(object):
         # Now that we are done with processing messages
         # Lets publish what we have!
         if self.has_fix and self.has_std:
-            #self.msg_fix.longitude = -self.msg_fix.longitude
-            self.parent.fix_pub.publish(self.msg_fix)
+            if not np.isnan(self.msg_fix.latitude) and not np.isnan(self.msg_fix.longitude) and not np.isnan(self.msg_fix.altitude) and not np.any(np.isnan(self.msg_fix.position_covariance)):
+                self.parent.fix_pub.publish(self.msg_fix)
             self.msg_fix = NavSatFix()
             self.has_fix = False
             self.has_std = False
