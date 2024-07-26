@@ -45,7 +45,7 @@ class ros2_ReachSerialHandler(Node):
         try:
             while rclpy.ok():
                 data = self.emlid.readline()
-                rclpy.spin_once(self, timeout_sec=0.1) # allow functions such as ros2 node info, ros2 param list to work
+                rclpy.spin_once(self, timeout_sec=0) # allow functions such as ros2 node info, ros2 param list to work
                 try:
                     driver.process_line(data.decode('utf-8').rstrip().encode('utf-8').strip(b'\x00'))
                 except ValueError as e:
@@ -66,7 +66,7 @@ class ros2_ReachSerialHandler(Node):
                 self.get_logger().info("Emlid device found at port = " + port)
 
                 try:
-                    self.emlid = serial.Serial(port=port, baudrate=38400)
+                    self.emlid = serial.Serial(port=port, baudrate=115200)
                     self.device_connected = True
                     break
 

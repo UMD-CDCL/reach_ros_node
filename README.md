@@ -19,7 +19,7 @@ Right now this supports all NMEA messages from the package, while some are not u
 Alternatively, if you connect the Reach M+ module via a USB cable:
 4. Set position streaming to "Serial" with
    * Port: USB to PC
-   * Baud rate: 38400
+   * Baud rate: 115200
    * Format: NMEA
 5. The node automatically finds the device serial port using pyudev (install v0.21.0 `pip3 install -Iv pyudev==0.21.0` if not installed), and starts it. 
 6. Run using `ros2 run reach_ros_node nmea_serial_driver`
