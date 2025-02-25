@@ -15,6 +15,8 @@
   <depend>geometry_msgs</depend>
   <depend>nmea_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>diagnostic_updater</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
