@@ -9,6 +9,9 @@ import pyudev
 import diagnostic_updater
 import diagnostic_msgs
 
+import socket
+import errno
+import threading
 
 class ros2_ReachSerialHandler(Node):
     # Set our parameters and the default socket to open
@@ -29,6 +32,58 @@ class ros2_ReachSerialHandler(Node):
                 ('use_rostime', True),
                 ('use_rmc', False)]
         )
+
+        # paramters for reading corrections over UDP
+        # self.declare_parameter('udp_host', '10.200.142.255')
+        self.declare_parameter('udp_port', 9008)
+        # host = self.get_parameter('udp_host').get_parameter_value().string_value
+        port = self.get_parameter('udp_port').get_parameter_value().integer_value
+
+        # set up non-blocking UDP socket
+        self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        # allow reuse and allow broadcast packets
+        self.udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+        self.udp_sock.bind(('', port))
+        self.udp_sock.settimeout(1.0)
+        # self.udp_sock.setblocking(False)
+        self.get_logger().info(f'Listening for UDP on port {port}')
+
+        self._running = True
+
+        self._serial_lock = threading.Lock()
+
+        # spawn a separate thread for UDP reads
+        self._udp_thread = threading.Thread(target=self._udp_listener,
+                                            name="UDPListener",
+                                            daemon=True)
+
+        self._udp_thread.start()
+
+    def _udp_listener(self):
+        while self._running and rclpy.ok():
+            # poll corrections from UDP and forward to serial
+            try:
+                data, addr = self.udp_sock.recvfrom(1024)
+                if data:
+                    with self._serial_lock:
+                        try:
+                            # self.get_logger().info(f"Received {len(data)} bytes from UDP {addr}")
+                            self.emlid.write(data)
+                        except Exception as e:
+                            self.get_logger().error(f"Serial write error: {e}")
+            except BlockingIOError:
+                # no data available
+                # self.get_logger().info('No data received over UDP')
+                pass
+            except socket.timeout:
+                continue
+            except OSError as e:
+                # other socket error
+                if e.errno != errno.EWOULDBLOCK:
+                    self.get_logger().error(f"UDP socket error: {e}")
 
     def produce_diagnostics(self, stat):
         # define nominal diagnostic status
@@ -76,8 +131,12 @@ class ros2_ReachSerialHandler(Node):
                     self.driver.process_line(data.decode('utf-8').rstrip().encode('utf-8').strip(b'\x00'))
                 except ValueError as e:
                     self.get_logger().info("Value error, likely due to missing fields in the NMEA message. Error was: %s." % e)
+
         except Exception as e:
             self.get_logger().error("an error occured while reading lines from device. Error was: %s." %e)
+
+        finally:
+            self._running = False
 
     # Try to connect to the device, allows for reconnection
     # Will loop till we get a connection, note we have a long timeout
