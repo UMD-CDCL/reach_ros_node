@@ -2,28 +2,28 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>reach_ros_node</name>
-  <version>2.0.0</version>
-  <description>
-  Package to parse NMEA strings from TCP input and publish a very simple GPS message.
-  Does not require the GPSD deamon to be installed.
-  Converted to work with the Reach RTK GPS units.
-  </description>
-  <maintainer email="pgneva@udel.edu">Patrick Geneva</maintainer>
+  <version>3.0.0</version>
+  <description>ROS2 Wrapper for Emlid Reach GNSS modules</description>
+  <maintainer email="srijal@umd.edu">Srijal</maintainer>
   <license>BSD</license>
 
-  <depend>rclpy</depend>
-  <depend>geometry_msgs</depend>
-  <depend>nmea_msgs</depend>
-  <depend>sensor_msgs</depend>
-  <depend>diagnostic_msgs</depend>
-  <depend>diagnostic_updater</depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
-  <test_depend>ament_copyright</test_depend>
-  <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
   <test_depend>python3-pytest</test_depend>
 
+  <depend>rclcpp</depend>
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>diagnostic_updater</depend>
+  <depend>Boost</depend>
+  <depend>libudev</depend>
+
   <export>
-    <build_type>ament_python</build_type>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>
