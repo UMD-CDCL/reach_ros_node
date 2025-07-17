@@ -12,9 +12,9 @@ RosNMEADriver::RosNMEADriver(rclcpp::Node::SharedPtr node)
   timeref_pub_ = node_->create_publisher<sensor_msgs::msg::TimeReference>("time", 10);
 
   // Parameters
-  frame_timeref_ = node_->get_parameter("frame_timeref").as_string();
-  frame_gps_     = node_->get_parameter("frame_gps").as_string();
-  use_rmc_       = node_->get_parameter("use_rmc").as_bool();
+  frame_timeref_ = node_->declare_parameter("frame_timeref", "gps_time");
+  frame_gps_     = node_->declare_parameter("frame_gps", "gps");
+  use_rmc_       = node_->declare_parameter("use_rmc", false);
 
   // Initialize blank messages
   msg_fix_.position_covariance_type = 
@@ -22,25 +22,44 @@ RosNMEADriver::RosNMEADriver(rclcpp::Node::SharedPtr node)
 }
 
 void RosNMEADriver::process_line(const std::string &line) {
+
+  // std::cout << line << std::endl;
+
   // Validate checksum
   if (!check_nmea_checksum(line)) {
-    RCLCPP_WARN(node_->get_logger(),
+    RCLCPP_WARN_SKIPFIRST(node_->get_logger(),
       "Invalid checksum: '%s'", line.c_str());
     return;
   }
 
-  auto ps = parse_nmea_sentence(line);
+  ParsedSentence ps = parse_nmea_sentence(line);
+
   if (ps.type.empty()) {
     RCLCPP_WARN(node_->get_logger(),
       "Failed to parse NMEA sentence: '%s'", line.c_str());
     return;
   }
 
-  // Dispatch
+  // make sure some of the fields in the parsed sentence are non-empty 
+  // fields remain empty when GPS does not have a fix
+  bool all_empty = true;
+  for (const auto &entry : ps.fields) {
+      if (!entry.empty()) {
+          all_empty = false;
+          break;
+      }
+  }
+
+  if(all_empty) {
+    RCLCPP_WARN(node_->get_logger(), "GPS likely does not have a fix. Received empty NMEA sentence from GPS module.");
+    return;
+  }
+
+  // parse each sentence type further
   parse_GGA(ps);
   parse_GST(ps);
   parse_VTG(ps);
-  parse_RMC(ps);
+  // parse_RMC(ps);
   parse_time(ps);
 
   // Publish as ready
@@ -75,7 +94,22 @@ static double convert_deg(const std::string &raw, char dir) {
 void RosNMEADriver::parse_GGA(const ParsedSentence &ps) {
   if (ps.type != "GGA" || use_rmc_) return;
   auto &f = ps.fields;
-  if (f.size() < 11) return;
+  if (f.size() < 11 ||
+      f[1].empty() ||
+      f[2].empty() ||
+      f[3].empty() ||
+      f[4].empty() ||
+      f[5].empty() ||
+      f[8].empty() ||
+      f[10].empty()) {
+        return;
+  } 
+
+  // std::cout << "GGA fields.size() = " << f.size() << std::endl;
+
+  // for(auto& t : f) {
+  //   std::cout << t << std::endl;
+  // }
 
   // Header
   msg_fix_.header.stamp = node_->get_clock()->now();
@@ -99,8 +133,8 @@ void RosNMEADriver::parse_GGA(const ParsedSentence &ps) {
   msg_fix_.longitude = convert_deg(f[3], f[4][0]);
 
   // Altitude + geoid offset
-  double alt    = std::stod(f[9]);
-  double geoid = std::stod(f[11]);
+  double alt    = std::stod(f[8]);
+  double geoid = std::stod(f[10]);
   msg_fix_.altitude = alt + geoid;
 
   has_fix_ = true;
@@ -109,12 +143,17 @@ void RosNMEADriver::parse_GGA(const ParsedSentence &ps) {
 void RosNMEADriver::parse_GST(const ParsedSentence &ps) {
   if (ps.type != "GST" || use_rmc_) return;
   auto &f = ps.fields;
-  if (f.size() < 8) return;
+  if (f.size() < 8 ||
+      f[5].empty() ||
+      f[6].empty() ||
+      f[7].empty()) {
+        return;
+  } 
 
   // std deviations
-  double s_lat = std::stod(f[6]);
-  double s_lon = std::stod(f[7]);
-  double s_alt = std::stod(f[8]);
+  double s_lat = std::stod(f[5]);
+  double s_lon = std::stod(f[6]);
+  double s_alt = std::stod(f[7]);
   msg_fix_.position_covariance[0] = s_lat*s_lat;
   msg_fix_.position_covariance[4] = s_lon*s_lon;
   msg_fix_.position_covariance[8] = s_alt*s_alt;
@@ -127,52 +166,62 @@ void RosNMEADriver::parse_GST(const ParsedSentence &ps) {
 void RosNMEADriver::parse_VTG(const ParsedSentence &ps) {
   if (ps.type != "VTG" || use_rmc_) return;
   auto &f = ps.fields;
-  if (f.size() < 7) return;
+  if (f.size() < 7 ||
+      f[4].empty() ||
+      f[0].empty()) {
+        return;
+  } 
 
   msg_vel_.header.stamp = node_->get_clock()->now();
   msg_vel_.header.frame_id = frame_gps_;
 
-  double speed = std::stod(f[5]);    // knots or kmph? adjust as needed
-  double course = std::stod(f[1]);   // true track
+  double speed = std::stod(f[4]);    // knots or kmph? adjust as needed
+  double course = std::stod(f[0]);   // true track
   msg_vel_.twist.linear.x = speed * std::sin(course * M_PI/180.0);
   msg_vel_.twist.linear.y = speed * std::cos(course * M_PI/180.0);
 
   has_vel_ = true;
 }
 
-void RosNMEADriver::parse_RMC(const ParsedSentence &ps) {
-  if (ps.type != "RMC" || !use_rmc_) return;
-  auto &f = ps.fields;
-  if (f.size() < 9) return;
+// void RosNMEADriver::parse_RMC(const ParsedSentence &ps) {
+//   if (ps.type != "RMC" || !use_rmc_) return;
+//   auto &f = ps.fields;
+//   if (f.size() < 9) return;
 
-  msg_fix_.header.stamp = node_->get_clock()->now();
-  msg_fix_.header.frame_id = frame_gps_;
+//   // std::cout << "RMC fields.size() = " << f.size() << std::endl;
 
-  bool valid = (f[1] == "A");
-  msg_fix_.status.status  = valid
-    ? sensor_msgs::msg::NavSatStatus::STATUS_FIX
-    : sensor_msgs::msg::NavSatStatus::STATUS_NO_FIX;
-  msg_fix_.status.service = 
-    sensor_msgs::msg::NavSatStatus::SERVICE_GPS;
+//   // for(auto& t : f) {
+//   //   std::cout << t << std::endl;
+//   // }
 
-  msg_fix_.latitude  = convert_deg(f[2], f[3][0]);
-  msg_fix_.longitude = convert_deg(f[4], f[5][0]);
+//   msg_fix_.header.stamp = node_->get_clock()->now();
+//   msg_fix_.header.frame_id = frame_gps_;
 
-  msg_fix_.altitude = NAN;
-  msg_fix_.position_covariance_type = 
-    sensor_msgs::msg::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
+//   bool valid = (f[1] == "A");
+//   msg_fix_.status.status  = valid
+//     ? sensor_msgs::msg::NavSatStatus::STATUS_FIX
+//     : sensor_msgs::msg::NavSatStatus::STATUS_NO_FIX;
+//   msg_fix_.status.service = 
+//     sensor_msgs::msg::NavSatStatus::SERVICE_GPS;
 
-  has_fix_ = true;
-  has_std_ = true;
+//   msg_fix_.latitude  = convert_deg(f[2], f[3][0]);
+//   msg_fix_.longitude = convert_deg(f[3], f[5][0]);
 
-  msg_vel_.header.stamp = msg_fix_.header.stamp;
-  msg_vel_.header.frame_id = frame_gps_;
-  double speed = std::stod(f[7]);    // speed over ground
-  double course = std::stod(f[8]);   // true course
-  msg_vel_.twist.linear.x = speed * std::sin(course * M_PI/180.0);
-  msg_vel_.twist.linear.y = speed * std::cos(course * M_PI/180.0);
-  has_vel_ = true;
-}
+//   msg_fix_.altitude = NAN;
+//   msg_fix_.position_covariance_type = 
+//     sensor_msgs::msg::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
+
+//   has_fix_ = true;
+//   has_std_ = true;
+
+//   msg_vel_.header.stamp = msg_fix_.header.stamp;
+//   msg_vel_.header.frame_id = frame_gps_;
+//   double speed = std::stod(f[4]);    // speed over ground
+//   double course = std::stod(f[5]);   // true course
+//   msg_vel_.twist.linear.x = speed * std::sin(course * M_PI/180.0);
+//   msg_vel_.twist.linear.y = speed * std::cos(course * M_PI/180.0);
+//   has_vel_ = true;
+// }
 
 void RosNMEADriver::parse_time(const ParsedSentence &ps) {
   const std::string *utc_field = nullptr;

@@ -42,7 +42,7 @@ ament_target_dependencies(parser)
 add_library(driver src/driver.cpp)
 ament_target_dependencies(driver rclcpp sensor_msgs)
 
-add_executable(nmea_serial_driver src/nmea_serial_driver.cpp src/driver.cpp)
+add_executable(nmea_serial_driver src/main.cpp src/nmea_serial_driver.cpp src/driver.cpp)
 target_link_libraries(nmea_serial_driver
   checksum_utils
   parser

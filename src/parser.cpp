@@ -1,20 +1,29 @@
 #include <regex>
 #include <sstream>
+#include <iostream>
 #include "parser.hpp"
 
 ParsedSentence parse_nmea_sentence(const std::string &sentence) {
   ParsedSentence out;
-  // 1) Basic NMEA format: starts with $GP/GA/GN/GL, ends with *XX
-  static const std::regex pattern(R"(^\$(?:GP|GA|GN|GL)[^*]*\*[0-9A-Fa-f]{2}$)");
-  if (!std::regex_match(sentence, pattern)) {
-    return out;
-  }
 
-  // 2) Strip checksum suffix
-  auto star = sentence.find('*');
-  std::string core = sentence.substr(0, star);
+  // first extract the clean NMEA part from received sentence
+  // basic NMEA format: starts with $GP/GA/GN/GL, ends with *XX
+  static const std::regex nmea_extract_pattern(R"(\$(GP|GA|GN|GL)[A-Z]{3}(,[^,]*)*\*[0-9A-Fa-f]{2})");
 
-  // 3) Split on commas
+  std::sregex_iterator it(sentence.begin(), sentence.end(), nmea_extract_pattern);
+  std::sregex_iterator end;
+
+  std::string sentence_cleaned;
+
+  sentence_cleaned = (*it).str();  // gets the first regex match
+
+  // strip checksum suffix
+  auto star = sentence_cleaned.find('*');
+  std::string core = sentence_cleaned.substr(0, star);
+
+  // std::cout << "core: " << core << std::endl;
+
+  // split on commas
   std::vector<std::string> fields;
   std::stringstream ss(core);
   std::string token;
@@ -25,16 +34,16 @@ ParsedSentence parse_nmea_sentence(const std::string &sentence) {
     return out;
   }
 
-  // 4) Extract and remove the header (e.g. "$GPGGA")
+  // extract and remove the header (e.g. "$GPGGA")
   const std::string &header = fields[0];
   if (header.size() < 6) {
     return out;
   }
-  // Sentence type is the last 3 chars of header
+  // sentence type is the last 3 chars of header
   out.type = header.substr(3);
   fields.erase(fields.begin());
 
-  // 5) The rest are the data fields
+  // the rest are the data fields
   out.fields = std::move(fields);
   return out;
 }
