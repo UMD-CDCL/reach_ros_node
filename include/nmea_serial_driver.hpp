@@ -25,7 +25,8 @@ private:
   void handle_udp_receive(const boost::system::error_code &ec, std::size_t n);
   void start_serial_read();
   void handle_serial_read(const boost::system::error_code &ec, std::size_t n);
-
+  
+  bool first_serial_read_call_;
   std::shared_ptr<boost::asio::io_context> io_context_;
   boost::asio::serial_port serial_;
   boost::asio::ip::udp::socket udp_sock_;

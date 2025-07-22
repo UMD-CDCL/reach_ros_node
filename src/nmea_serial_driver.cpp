@@ -48,13 +48,16 @@ void ReachROSNode::init(const rclcpp::Node::SharedPtr &self) {
   driver_ = std::make_shared<RosNMEADriver>(self);
 
   start_udp_receive();
-  start_serial_read();
 
   threads_.reserve(2);
   for (int i = 0; i < 2; ++i) {
     threads_.emplace_back(run_io, 
                           io_context_.get());
   }
+
+  first_serial_read_call_ = true;
+
+  start_serial_read();
 }
 
 std::string ReachROSNode::find_serial_device(const std::string &vendor_filter) {
@@ -106,6 +109,13 @@ void ReachROSNode::handle_udp_receive(const boost::system::error_code &ec, std::
 }
 
 void ReachROSNode::start_serial_read() {
+  
+  if (first_serial_read_call_) {
+   RCLCPP_INFO(rclcpp::get_logger("reach_ros_node"),"Sleeping GPS fix publishing thread for 10 seconds to allow for RTK corrections to take effect...");
+   std::this_thread::sleep_for(std::chrono::seconds(10));
+   first_serial_read_call_ = false;
+  }
+
   boost::asio::async_read_until(
     serial_, serial_buf_, '\n',
     std::bind(&ReachROSNode::handle_serial_read, this,
