@@ -8,6 +8,7 @@ RosNMEADriver::RosNMEADriver(rclcpp::Node::SharedPtr node)
   has_fix_(false), has_std_(false), has_vel_(false), has_timeref_(false) {
   // Publishers
   fix_pub_     = node_->create_publisher<sensor_msgs::msg::NavSatFix>("fix", 10);
+  fix_low_cov_only_pub_ = node_->create_publisher<sensor_msgs::msg::NavSatFix>("fix/low_cov_only", 10);
   vel_pub_     = node_->create_publisher<geometry_msgs::msg::TwistStamped>("vel", 10);
   timeref_pub_ = node_->create_publisher<sensor_msgs::msg::TimeReference>("time", 10);
 
@@ -15,7 +16,17 @@ RosNMEADriver::RosNMEADriver(rclcpp::Node::SharedPtr node)
   frame_timeref_ = node_->declare_parameter("frame_timeref", "gps_time");
   frame_gps_     = node_->declare_parameter("frame_gps", "gps");
   use_rmc_       = node_->declare_parameter("use_rmc", false);
+  
+ // std::cout << "creating parameters" << std::endl;
 
+ 
+  relax_gps_low_cov_requirement_ = node_->declare_parameter("relax_gps_low_cov_requirement", false);
+  relax_gps_low_cov_requirement_ = node_->get_parameter("relax_gps_low_cov_requirement").as_bool();
+
+  low_cov_threshold_ = node_->declare_parameter("low_cov_topic_threshold", 0.1);
+  low_cov_threshold_ = node_->get_parameter("low_cov_topic_threshold").as_double();
+
+  //std::cout << "created params" << std::endl;
   // Initialize blank messages
   msg_fix_.position_covariance_type = 
     sensor_msgs::msg::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
@@ -61,10 +72,29 @@ void RosNMEADriver::process_line(const std::string &line) {
   parse_VTG(ps);
   // parse_RMC(ps);
   parse_time(ps);
-
+  
+  //std::cout << "done parsing" << std::endl;
   // Publish as ready
   if (has_fix_ && has_std_) {
+    //std::cout << "Trying to publish fix" << std::endl;
     fix_pub_->publish(msg_fix_);
+    //std::cout << "published fix" << std::endl;
+
+    // if the covariance is below threshold then also publish to the low covariance topic
+    if ((msg_fix_.position_covariance[0] < low_cov_threshold_ &&
+        msg_fix_.position_covariance[4] < low_cov_threshold_) ||
+        relax_gps_low_cov_requirement_) {
+
+	  //  std::cout << "publishing low cov fix" << std::endl;
+
+      fix_low_cov_only_pub_->publish(msg_fix_);
+
+      //std::cout << "published low cov fix" << std::endl;
+    } else {
+    
+     // std::cout << "else case" << std::endl;
+    }
+
     msg_fix_ = sensor_msgs::msg::NavSatFix();
     msg_fix_.position_covariance_type = 
       sensor_msgs::msg::NavSatFix::COVARIANCE_TYPE_UNKNOWN;

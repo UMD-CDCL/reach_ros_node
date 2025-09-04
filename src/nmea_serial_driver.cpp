@@ -27,7 +27,7 @@ ReachROSNode::ReachROSNode()
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
-  int baud = declare_parameter("baud_rate", 115200);
+  int baud = declare_parameter("baud_rate", 38400);
 
   try {
     serial_.open(port);
