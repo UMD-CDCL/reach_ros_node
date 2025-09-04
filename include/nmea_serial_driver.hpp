@@ -1,11 +1,15 @@
-#ifndef REACH_SERIAL_CPP__SERIAL_UDP_NODE_HPP_
-#define REACH_SERIAL_CPP__SERIAL_UDP_NODE_HPP_
+#ifndef REACH_SERIAL_CPP__SERIAL_TCP_NODE_HPP_
+#define REACH_SERIAL_CPP__SERIAL_TCP_NODE_HPP_
 
 #include <rclcpp/rclcpp.hpp>
 #include <boost/asio.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <array>
+#include <string>
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <memory>
 #include "driver.hpp"
 
 class ReachROSNode
@@ -21,20 +25,29 @@ private:
   static std::string find_serial_device(const std::string &vendor);
   static void run_io(boost::asio::io_context *io);
 
-  void start_udp_receive();
-  void handle_udp_receive(const boost::system::error_code &ec, std::size_t n);
+  void start_tcp_receive();
+  void handle_tcp_receive(const boost::system::error_code &ec, std::size_t n);
   void start_serial_read();
   void handle_serial_read(const boost::system::error_code &ec, std::size_t n);
-  
-  bool first_serial_read_call_;
+  void schedule_reconnect();
+
+  bool first_serial_read_call_{true};
   std::shared_ptr<boost::asio::io_context> io_context_;
   boost::asio::serial_port serial_;
-  boost::asio::ip::udp::socket udp_sock_;
-  boost::asio::ip::udp::endpoint remote_ep_;
-  std::array<char,1024> udp_buffer_;
+
+  boost::asio::ip::tcp::socket tcp_sock_;
+  boost::asio::ip::tcp::resolver resolver_;
+  boost::asio::steady_timer reconnect_timer_;
+
+  std::array<char, 1024> tcp_buffer_;
+
   boost::asio::streambuf serial_buf_;
   std::vector<std::thread> threads_;
   std::shared_ptr<RosNMEADriver> driver_;
+
+  // connection params
+  std::string tcp_host_;
+  int tcp_port_;
 };
 
-#endif  // REACH_SERIAL_CPP__SERIAL_UDP_NODE_HPP_
+#endif  // REACH_SERIAL_CPP__SERIAL_TCP_NODE_HPP_
