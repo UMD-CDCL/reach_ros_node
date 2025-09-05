@@ -23,8 +23,8 @@ public:
 
 private:
   static std::string find_serial_device(const std::string &vendor);
-  static void run_io(boost::asio::io_context *io);
-
+  
+  void asio_pump_tick();
   void start_tcp_receive();
   void handle_tcp_receive(const boost::system::error_code &ec, std::size_t n);
   void start_serial_read();
@@ -42,9 +42,10 @@ private:
   std::array<char, 1024> tcp_buffer_;
 
   boost::asio::streambuf serial_buf_;
-  std::vector<std::thread> threads_;
   std::shared_ptr<RosNMEADriver> driver_;
 
+  rclcpp::TimerBase::SharedPtr asio_pump_timer_;
+  
   // connection params
   std::string tcp_host_;
   int tcp_port_;

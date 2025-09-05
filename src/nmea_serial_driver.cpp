@@ -3,12 +3,10 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
+#include <functional>
 
 using boost::asio::ip::tcp;
 
-void ReachROSNode::run_io(boost::asio::io_context *io) {
-  io->run();
-}
 
 ReachROSNode::ReachROSNode()
 : Node("reach_ros_node"),
@@ -18,17 +16,18 @@ ReachROSNode::ReachROSNode()
   resolver_(*io_context_),
   reconnect_timer_(*io_context_)
 {
+
+  // declare parameters
+  tcp_port_ = declare_parameter<int>("tcp_port", 9018);
+  tcp_port_ = get_parameter("tcp_port").as_int();
+
+  // host parameter for the TCP server (RTK Base Pi)
+  tcp_host_ = declare_parameter<std::string>("tcp_host", "10.200.142.54");
+  tcp_host_ = get_parameter("tcp_host").as_string();
+  
   // Find serial port
   std::string port;
   while (rclcpp::ok()) {
-
-    tcp_port_ = declare_parameter<int>("tcp_port", 9018);
-    tcp_port_ = get_parameter("tcp_port").as_int();
-
-    // host parameter for the TCP server (RTK Base Pi)
-    tcp_host_ = declare_parameter<std::string>("tcp_host", "10.200.142.54");
-    tcp_host_ = get_parameter("tcp_host").as_string();
-
     port = find_serial_device("FTDI");  // Emlid serial port connected through PPIM has vendor ID FTDI.
                                         // If connected directly over USB, this would be "Emlid"
     if (!port.empty()) {
@@ -54,7 +53,6 @@ ReachROSNode::ReachROSNode()
 
 ReachROSNode::~ReachROSNode() {
   io_context_->stop();
-  for (auto &t : threads_) t.join();
 }
 
 void ReachROSNode::init(const rclcpp::Node::SharedPtr &self) {
@@ -62,15 +60,18 @@ void ReachROSNode::init(const rclcpp::Node::SharedPtr &self) {
 
   start_tcp_receive();
 
-  threads_.reserve(2);
-  for (int i = 0; i < 2; ++i) {
-    threads_.emplace_back(run_io, 
-                          io_context_.get());
-  }
+  // create ROS2 timer to poll Boost Asio
+  asio_pump_timer_ = this->create_wall_timer(std::chrono::milliseconds(1),
+                                             std::bind(&ReachROSNode::asio_pump_tick, this));
 
   first_serial_read_call_ = true;
 
   start_serial_read();
+}
+
+void ReachROSNode::asio_pump_tick() {
+  // non-blobking; processes any ready handlers from Boost Asio 
+  io_context_->poll();
 }
 
 std::string ReachROSNode::find_serial_device(const std::string &vendor_filter) {
