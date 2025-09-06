@@ -5,25 +5,19 @@
 #include <iostream>
 #include <functional>
 
-using boost::asio::ip::tcp;
+using boost::asio::ip::udp;
 
 
 ReachROSNode::ReachROSNode()
 : Node("reach_ros_node"),
   io_context_(std::make_shared<boost::asio::io_context>()),
   serial_(*io_context_),
-  tcp_sock_(*io_context_),
-  resolver_(*io_context_),
-  reconnect_timer_(*io_context_)
+  udp_sock_(*io_context_)
 {
 
   // declare parameters
-  tcp_port_ = declare_parameter<int>("tcp_port", 9018);
-  tcp_port_ = get_parameter("tcp_port").as_int();
-
-  // host parameter for the TCP server (RTK Base Pi)
-  tcp_host_ = declare_parameter<std::string>("tcp_host", "10.200.142.54");
-  tcp_host_ = get_parameter("tcp_host").as_string();
+  udp_port_ = declare_parameter<int>("udp_port", 9018);
+  udp_port_ = get_parameter("udp_port").as_int();
   
   // Find serial port
   std::string port;
@@ -48,6 +42,19 @@ ReachROSNode::ReachROSNode()
     RCLCPP_ERROR(get_logger(), "Failed to open serial %s: %s", port.c_str(), e.what());
     throw;
   }
+
+  // open & bind UDP socket
+  boost::system::error_code bec;
+  udp_sock_.open(udp::v4(), bec);
+  if (bec) {
+    RCLCPP_ERROR(get_logger(), "UDP open failed: %s", bec.message().c_str());
+    throw std::runtime_error("udp open failed");
+  }
+  udp_sock_.bind(udp::endpoint(udp::v4(), udp_port_), bec);
+  if (bec) {
+    RCLCPP_ERROR(get_logger(), "UDP bind on port %d failed: %s", udp_port_, bec.message().c_str());
+    throw std::runtime_error("udp bind failed");
+  }
   
 }
 
@@ -58,7 +65,7 @@ ReachROSNode::~ReachROSNode() {
 void ReachROSNode::init(const rclcpp::Node::SharedPtr &self) {
   driver_ = std::make_shared<RosNMEADriver>(self);
 
-  start_tcp_receive();
+  start_udp_receive();
 
   // create ROS2 timer to poll Boost Asio
   asio_pump_timer_ = this->create_wall_timer(std::chrono::milliseconds(1),
@@ -107,76 +114,22 @@ std::string ReachROSNode::find_serial_device(const std::string &vendor_filter) {
   return "";
 }
 
-void ReachROSNode::start_tcp_receive() {
-  // If not connected, resolve + connect; otherwise start reading
-  if (!tcp_sock_.is_open()) {
-    auto results = resolver_.resolve(tcp_host_, std::to_string(tcp_port_));
-    boost::asio::async_connect(
-      tcp_sock_, results,
-      [this](const boost::system::error_code &ec, const tcp::endpoint &ep) {
-        if (ec) {
-          RCLCPP_ERROR(get_logger(), "tcp connect to %s:%d failed: %s",
-                       tcp_host_.c_str(), tcp_port_, ec.message().c_str());
-          schedule_reconnect();
-          return;
-        }
-        RCLCPP_INFO(get_logger(), "tcp connected to %s", ep.address().to_string().c_str());
-
-        // basic socket tuning (non-fatal if any fail)
-        boost::system::error_code ec2;
-        tcp_sock_.set_option(tcp::no_delay(true), ec2);
-
-        // DSCP EF (46) -> TOS 184 so WMM can prioritize on Wi-Fi
-        int fd = tcp_sock_.native_handle();
-        int tos = 46 << 2;
-        ::setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
-
-        // Keepalive to detect dead links faster
-        int ka = 1; ::setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &ka, sizeof(ka));
-        int idle = 15, intvl = 5, cnt = 3;
-        ::setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,  &idle, sizeof(idle));
-        ::setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
-        ::setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT,   &cnt,  sizeof(cnt));
-
-        // Now that we're connected, immediately begin reading
-        start_tcp_receive();
-      });
-    return;
-  }
-
-  tcp_sock_.async_read_some(
-    boost::asio::buffer(tcp_buffer_),
-    std::bind(&ReachROSNode::handle_tcp_receive, this,
+void ReachROSNode::start_udp_receive() {
+  udp_sock_.async_receive_from(
+    boost::asio::buffer(udp_buffer_), sender_ep_,
+    std::bind(&ReachROSNode::handle_udp_receive, this,
               std::placeholders::_1, std::placeholders::_2));
 }
 
-void ReachROSNode::handle_tcp_receive(const boost::system::error_code &ec, std::size_t bytes) {
+void ReachROSNode::handle_udp_receive(const boost::system::error_code &ec, std::size_t bytes) {
   if (!ec && bytes > 0) {
-    // std::cout << "sending " << bytes << " bytes" << std::endl;
     // forward corrections to serial
-    boost::asio::write(serial_, boost::asio::buffer(tcp_buffer_.data(), bytes));
-    // queue next read
-    start_tcp_receive();
-    return;
+    boost::asio::write(serial_, boost::asio::buffer(udp_buffer_.data(), bytes));
+  } else if (ec != boost::asio::error::operation_aborted) {
+    RCLCPP_WARN(get_logger(), "udp receive error: %s", ec.message().c_str());
   }
-
-  if (ec == boost::asio::error::operation_aborted) {
-    return; 
-  }
-
-  RCLCPP_WARN(get_logger(), "tcp read error: %s", ec.message().c_str());
-  boost::system::error_code ignored;
-  tcp_sock_.close(ignored);
-  schedule_reconnect();
-}
-
-void ReachROSNode::schedule_reconnect() {
-  reconnect_timer_.expires_after(std::chrono::seconds(2));
-  reconnect_timer_.async_wait([this](const boost::system::error_code &to_ec) {
-    if (to_ec == boost::asio::error::operation_aborted) return;
-    RCLCPP_INFO(get_logger(), "retrying tcp connect to %s:%d", tcp_host_.c_str(), tcp_port_);
-    start_tcp_receive();
-  });
+  // queue next read regardless
+  start_udp_receive();
 }
 
 void ReachROSNode::start_serial_read() {
