@@ -78,7 +78,12 @@ void ReachROSNode::init(const rclcpp::Node::SharedPtr &self) {
 
 void ReachROSNode::asio_pump_tick() {
   // non-blobking; processes any ready handlers from Boost Asio 
+  
+  try {
   io_context_->poll();
+  } catch (...) { 
+    RCLCPP_ERROR(get_logger(), "Some exception when io_context->poll()");
+  }
 }
 
 std::string ReachROSNode::find_serial_device(const std::string &vendor_filter) {
@@ -115,16 +120,25 @@ std::string ReachROSNode::find_serial_device(const std::string &vendor_filter) {
 }
 
 void ReachROSNode::start_udp_receive() {
+  try {
   udp_sock_.async_receive_from(
     boost::asio::buffer(udp_buffer_), sender_ep_,
     std::bind(&ReachROSNode::handle_udp_receive, this,
               std::placeholders::_1, std::placeholders::_2));
+  } catch (...) { 
+    RCLCPP_ERROR(get_logger(), "Some exception when start_udp_receive()");
+  }
 }
 
 void ReachROSNode::handle_udp_receive(const boost::system::error_code &ec, std::size_t bytes) {
   if (!ec && bytes > 0) {
     // forward corrections to serial
+   try {
     boost::asio::write(serial_, boost::asio::buffer(udp_buffer_.data(), bytes));
+   } catch (...) { 
+    RCLCPP_ERROR(get_logger(), "Some exception when writing to RTK serial port");
+  }
+
   } else if (ec != boost::asio::error::operation_aborted) {
     RCLCPP_WARN(get_logger(), "udp receive error: %s", ec.message().c_str());
   }
@@ -140,25 +154,43 @@ void ReachROSNode::start_serial_read() {
    first_serial_read_call_ = false;
   }
 
+  try {
   boost::asio::async_read_until(
     serial_, serial_buf_, '\n',
     std::bind(&ReachROSNode::handle_serial_read, this,
               std::placeholders::_1, std::placeholders::_2));
+  } catch (...) { 
+    RCLCPP_ERROR(get_logger(), "Some exception when async serial read");
+  }
+
 }
 
 void ReachROSNode::handle_serial_read(const boost::system::error_code &ec, std::size_t) {
   if (!ec) {
+
+    
     std::istream is(&serial_buf_);
     std::string line;
     std::getline(is, line);
 
+    try {
     // strip any escape characters
     while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
       line.pop_back();
     }
+   } catch (...) { 
+    RCLCPP_ERROR(get_logger(), "Some exception when parsing the received line from serial");
+    return;
+  }
+
 
     // process it
+  try {
     driver_->process_line(line);
+  } catch (...) { 
+    RCLCPP_ERROR(get_logger(), "Some exception when driver process line");
+  }
+
   }
   start_serial_read();
 }
