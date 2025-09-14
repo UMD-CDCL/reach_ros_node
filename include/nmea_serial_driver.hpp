@@ -28,6 +28,8 @@ private:
   void handle_udp_receive(const boost::system::error_code &ec, std::size_t n);
   void start_serial_read();
   void handle_serial_read(const boost::system::error_code &ec, std::size_t n);
+  void schedule_serial_reopen_ms(int ms);
+  void do_serial_reopen();
 
   bool first_serial_read_call_{true};
   std::shared_ptr<boost::asio::io_context> io_context_;
@@ -42,9 +44,11 @@ private:
 
   
   rclcpp::TimerBase::SharedPtr asio_pump_timer_;
+  rclcpp::TimerBase::SharedPtr serial_reopen_timer_;
   
   // connection params
   int udp_port_;
+  std::string serial_dev_;
 };
 
 #endif  // REACH_SERIAL_CPP__SERIAL_TCP_NODE_HPP_

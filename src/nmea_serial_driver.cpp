@@ -38,6 +38,7 @@ ReachROSNode::ReachROSNode()
   try {
     serial_.open(port);
     serial_.set_option(boost::asio::serial_port_base::baud_rate(baud));
+    serial_dev_ = port;  // remember for reopen
   } catch (const std::exception &e) {
     RCLCPP_ERROR(get_logger(), "Failed to open serial %s: %s", port.c_str(), e.what());
     throw;
@@ -136,7 +137,8 @@ void ReachROSNode::handle_udp_receive(const boost::system::error_code &ec, std::
    try {
     boost::asio::write(serial_, boost::asio::buffer(udp_buffer_.data(), bytes));
    } catch (...) { 
-    RCLCPP_ERROR(get_logger(), "Some exception when writing to RTK serial port");
+    RCLCPP_ERROR(get_logger(), "Some exception when writing to RTK serial port. Performing Serial reopen...");
+    schedule_serial_reopen_ms(500);
   }
 
   } else if (ec != boost::asio::error::operation_aborted) {
@@ -193,4 +195,39 @@ void ReachROSNode::handle_serial_read(const boost::system::error_code &ec, std::
 
   }
   start_serial_read();
+}
+
+void ReachROSNode::schedule_serial_reopen_ms(int ms) {
+  if (serial_reopen_timer_) return; // already scheduled
+  serial_reopen_timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(ms),
+      std::bind(&ReachROSNode::do_serial_reopen, this));
+}
+
+void ReachROSNode::do_serial_reopen() {
+  serial_reopen_timer_.reset(); // one-shot
+  // close if open
+  boost::system::error_code ec;
+  serial_.cancel(ec);  // ignore errors
+  serial_.close(ec);
+
+  // try reopen
+  try {
+    serial_.open(serial_dev_);
+    // reapply options; keep your baud param
+    const int baud = get_parameter("baud_rate").as_int();
+    serial_.set_option(boost::asio::serial_port_base::baud_rate(baud));
+    serial_.set_option(boost::asio::serial_port_base::character_size(8));
+    serial_.set_option(boost::asio::serial_port_base::parity(
+        boost::asio::serial_port_base::parity::none));
+    serial_.set_option(boost::asio::serial_port_base::stop_bits(
+        boost::asio::serial_port_base::stop_bits::one));
+    serial_.set_option(boost::asio::serial_port_base::flow_control(
+        boost::asio::serial_port_base::flow_control::none));
+    RCLCPP_INFO(get_logger(), "serial reopened: %s @ %d", serial_dev_.c_str(), baud);
+  } catch (const std::exception &e) {
+    RCLCPP_WARN(get_logger(), "serial reopen failed: %s — retrying", e.what());
+    // try again soon
+    schedule_serial_reopen_ms(1000);
+  }
 }
