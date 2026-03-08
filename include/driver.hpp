@@ -22,6 +22,7 @@ private:
 
   rclcpp::Node::SharedPtr node_;
   rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr fix_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr fix_low_cov_only_pub_;
   rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr vel_pub_;
   rclcpp::Publisher<sensor_msgs::msg::TimeReference>::SharedPtr timeref_pub_;
 
@@ -34,6 +35,10 @@ private:
   bool has_std_;
   bool has_vel_;
   bool has_timeref_;
+
+  // if this is set to true then fix/low_cov_only will contain all messages from /fix
+  bool relax_gps_low_cov_requirement_;
+  double low_cov_threshold_;
 
   sensor_msgs::msg::NavSatFix msg_fix_;
   geometry_msgs::msg::TwistStamped msg_vel_;
