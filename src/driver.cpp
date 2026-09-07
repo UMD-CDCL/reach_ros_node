@@ -23,6 +23,10 @@ RosNMEADriver::RosNMEADriver(rclcpp::Node::SharedPtr node)
   low_cov_threshold_ = node_->declare_parameter("low_cov_topic_threshold", 0.1);
   low_cov_threshold_ = node_->get_parameter("low_cov_topic_threshold").as_double();
 
+  // Float and standalone solutions carry multi-metre biases while reporting sub-metre
+  // covariance, so covariance alone is not a safe gate. Require an RTK-fixed status too.
+  require_rtk_fix_ = node_->declare_parameter("require_rtk_fix", true);
+
   // Initialize blank messages
   msg_fix_.position_covariance_type = 
     sensor_msgs::msg::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
@@ -73,8 +77,13 @@ void RosNMEADriver::process_line(const std::string &line) {
   if (has_fix_ && has_std_) {
     fix_pub_->publish(msg_fix_);
 
-    // if the covariance is below threshold then also publish to the low covariance topic
-    if ((msg_fix_.position_covariance[0] < low_cov_threshold_ &&
+    // republish on the gated topic only when the solution is RTK-fixed (if required) and its
+    // covariance is below threshold
+    // NavSatStatus cannot tell RTK float from RTK fixed (GGA quality 4 and 5 both map to
+    // STATUS_GBAS_FIX above), so gate on the raw quality indicator: 4 is RTK fixed only.
+    const bool rtk_ok = !require_rtk_fix_ || gga_quality_ == 4;
+    if ((rtk_ok &&
+        msg_fix_.position_covariance[0] < low_cov_threshold_ &&
         msg_fix_.position_covariance[4] < low_cov_threshold_) ||
         relax_gps_low_cov_requirement_) {
 
@@ -134,6 +143,7 @@ void RosNMEADriver::parse_GGA(const ParsedSentence &ps) {
 
   // Status
   int qual = std::stoi(f[5]);
+  gga_quality_ = qual;
   using Status = sensor_msgs::msg::NavSatStatus;
   switch (qual) {
     case 0: msg_fix_.status.status = Status::STATUS_NO_FIX; break;
@@ -192,7 +202,9 @@ void RosNMEADriver::parse_VTG(const ParsedSentence &ps) {
   msg_vel_.header.stamp = node_->get_clock()->now();
   msg_vel_.header.frame_id = frame_gps_;
 
-  double speed = std::stod(f[4]);    // knots or kmph? adjust as needed
+  // VTG field 5 (f[4] once the header is stripped) is speed over ground in knots. It was being
+  // published unconverted, which is why gps/vel read 1.94x Spot's own speed in every bag.
+  double speed = std::stod(f[4]) * 0.514444;  // knots -> m/s
   double course = std::stod(f[0]);   // true track
   msg_vel_.twist.linear.x = speed * std::sin(course * M_PI/180.0);
   msg_vel_.twist.linear.y = speed * std::cos(course * M_PI/180.0);
