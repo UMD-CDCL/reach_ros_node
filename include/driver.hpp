@@ -39,6 +39,8 @@ private:
   // if this is set to true then fix/low_cov_only will contain all messages from /fix
   bool relax_gps_low_cov_requirement_;
   double low_cov_threshold_;
+  bool require_rtk_fix_;
+  int gga_quality_ = 0;  // raw GGA quality indicator: 4 = RTK fixed, 5 = RTK float
 
   sensor_msgs::msg::NavSatFix msg_fix_;
   geometry_msgs::msg::TwistStamped msg_vel_;
