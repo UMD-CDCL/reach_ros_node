@@ -32,7 +32,9 @@ ReachROSNode::ReachROSNode()
   baud_ = get_parameter("baud_rate").as_int();
 
   reopen_min_delay_ms_ = declare_parameter("reopen_min_delay_ms", 500);
-  reopen_max_delay_ms_ = declare_parameter("reopen_max_delay_ms", 8000);
+  // 2 s ceiling: once the FT2232 is back on the bus (rtk-health re-enumerates it within about
+  // 10 s), the port is reopened within 2 s. A failed open of a missing path costs nothing.
+  reopen_max_delay_ms_ = declare_parameter("reopen_max_delay_ms", 2000);
   reopen_timeout_s_ = declare_parameter("reopen_timeout_s", 120.0);
   reopen_delay_ms_ = reopen_min_delay_ms_;
 
