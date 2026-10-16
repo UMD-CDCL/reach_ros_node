@@ -13,6 +13,13 @@ ParsedSentence parse_nmea_sentence(const std::string &sentence) {
   std::sregex_iterator it(sentence.begin(), sentence.end(), nmea_extract_pattern);
   std::sregex_iterator end;
 
+  // No match (any talker other than GP/GA/GN/GL -- $GBGSV, $GQGSV, $PUBX, ... -- that still has
+  // a valid checksum): dereferencing the end iterator is undefined behaviour. With this
+  // toolchain it returned "" for $GBGSV but threw std::bad_alloc for $PUBX in a test build.
+  if (it == end) {
+    return out;
+  }
+
   std::string sentence_cleaned;
 
   sentence_cleaned = (*it).str();  // gets the first regex match
