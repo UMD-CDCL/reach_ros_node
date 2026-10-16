@@ -27,6 +27,7 @@ public:
 
 private:
   void asio_pump_tick();
+  void data_watchdog_tick();
   void start_serial_read();
   void handle_serial_read(const boost::system::error_code &ec, std::size_t n);
   void schedule_serial_reopen_ms(int ms);
@@ -47,6 +48,13 @@ private:
 
   rclcpp::TimerBase::SharedPtr asio_pump_timer_;
   rclcpp::TimerBase::SharedPtr serial_reopen_timer_;
+  rclcpp::TimerBase::SharedPtr data_watchdog_timer_;
+
+  // Stale-backlog discard and open-but-silent detection (see configure_serial()).
+  std::chrono::steady_clock::time_point opened_at_{};
+  std::chrono::steady_clock::time_point last_line_at_{};
+  int64_t discard_ms_ = 1000;
+  double data_timeout_s_ = 10.0;
 
   std::string serial_dev_;
   int baud_ = 38400;
