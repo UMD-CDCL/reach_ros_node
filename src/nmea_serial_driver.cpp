@@ -1,5 +1,6 @@
 #include "nmea_serial_driver.hpp"
 #include <libudev.h>
+#include <termios.h>
 #include <chrono>
 #include <algorithm>
 #include <cstring>
@@ -37,6 +38,10 @@ ReachROSNode::ReachROSNode()
   reopen_max_delay_ms_ = declare_parameter("reopen_max_delay_ms", 2000);
   reopen_timeout_s_ = declare_parameter("reopen_timeout_s", 120.0);
   reopen_delay_ms_ = reopen_min_delay_ms_;
+  // Lines read this soon after an open are the stale PTY backlog (see configure_serial()).
+  discard_ms_ = declare_parameter("discard_after_open_ms", 1000);
+  // No complete line for this long on an open port: close and reopen. 0 disables.
+  data_timeout_s_ = declare_parameter("data_timeout_s", 10.0);
 
   serial_dev_ = serial_port;  // remember for reopen
 
@@ -69,6 +74,8 @@ void ReachROSNode::init(const rclcpp::Node::SharedPtr &self) {
   // create ROS2 timer to poll Boost Asio
   asio_pump_timer_ = this->create_wall_timer(std::chrono::milliseconds(1),
                                              std::bind(&ReachROSNode::asio_pump_tick, this));
+  data_watchdog_timer_ = this->create_wall_timer(std::chrono::seconds(1),
+                                                 std::bind(&ReachROSNode::data_watchdog_tick, this));
 
   if (serial_.is_open()) {
     start_serial_read();
@@ -86,6 +93,31 @@ void ReachROSNode::configure_serial() {
       boost::asio::serial_port_base::stop_bits::one));
   serial_.set_option(boost::asio::serial_port_base::flow_control(
       boost::asio::serial_port_base::flow_control::none));
+  // Drop whatever is queued in the PTY. socat keeps writing into /dev/ttyGPSFIX while nobody
+  // reads it, so the first bytes after an open are a backlog from the last reader's exit: on
+  // 2026-10-14 cairo's first sentences at 19:06:30 EDT carried GST time 22:59:14Z, seven
+  // minutes old, and would have been published with a fresh header stamp. TCIFLUSH empties
+  // the line discipline, but tty flip buffers and socat's own 8 KiB buffer (and ttyUSB0's
+  // queue behind it) still drain in a burst, so lines are also ignored for discard_ms_.
+  ::tcflush(serial_.native_handle(), TCIFLUSH);
+  opened_at_ = std::chrono::steady_clock::now();
+  last_line_at_ = opened_at_;
+}
+
+void ReachROSNode::data_watchdog_tick() {
+  // A port that opens but never delivers (socat alive but not forwarding, wrong baud on the
+  // splitter) used to sit forever: nothing errors, so nothing reopened it.
+  if (data_timeout_s_ <= 0.0 || !serial_.is_open() || serial_reopen_timer_) {
+    return;
+  }
+  const double silent = std::chrono::duration<double>(
+      std::chrono::steady_clock::now() - last_line_at_).count();
+  if (silent >= data_timeout_s_) {
+    RCLCPP_WARN(get_logger(), "no NMEA line on %s for %.0fs although it is open; reopening",
+                serial_dev_.c_str(), silent);
+    close_serial();
+    schedule_serial_reopen_ms(reopen_min_delay_ms_);
+  }
 }
 
 void ReachROSNode::close_serial() {
@@ -144,6 +176,13 @@ void ReachROSNode::handle_serial_read(const boost::system::error_code &ec, std::
     } catch (...) {
       RCLCPP_ERROR(get_logger(), "Some exception when parsing the received line from serial");
       start_serial_read();
+      return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    last_line_at_ = now;
+    if (now - opened_at_ < std::chrono::milliseconds(discard_ms_)) {
+      start_serial_read();   // stale backlog from before this open; do not publish it
       return;
     }
 
