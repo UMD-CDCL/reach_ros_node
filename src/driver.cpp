@@ -38,7 +38,8 @@ void RosNMEADriver::process_line(const std::string &line) {
 
   // Validate checksum
   if (!check_nmea_checksum(line)) {
-    RCLCPP_WARN_SKIPFIRST(node_->get_logger(),
+    // Throttled: a baud mismatch or a second reader on the PTY produces one of these per line.
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *node_->get_clock(), 5000,
       "Invalid checksum: '%s'", line.c_str());
     return;
   }
@@ -46,7 +47,7 @@ void RosNMEADriver::process_line(const std::string &line) {
   ParsedSentence ps = parse_nmea_sentence(line);
 
   if (ps.type.empty()) {
-    RCLCPP_WARN(node_->get_logger(),
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000,
       "Failed to parse NMEA sentence: '%s'", line.c_str());
     return;
   }
@@ -62,7 +63,8 @@ void RosNMEADriver::process_line(const std::string &line) {
   }
 
   if(all_empty) {
-    RCLCPP_WARN(node_->get_logger(), "GPS likely does not have a fix. Received empty NMEA sentence from GPS module.");
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000,
+      "GPS likely does not have a fix. Received empty NMEA sentence from GPS module.");
     return;
   }
 
